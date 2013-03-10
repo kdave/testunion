@@ -1,0 +1,17 @@
+#!/bin/sh
+
+if [ "$1" = '' ]; then
+	echo mount point please
+	exit
+fi
+
+m=${1:-.}
+here=$(dirname `readlink -f $0`)
+cd "$m"
+[ -f "$here/randcheck" ] || { echo cannot find my scripts; exit; }
+
+tmux new-session -d -s randcheck
+tmux new-window -t randcheck:0 -k $here/w-dstat
+tmux split-window -t randcheck:0 -p 66 -v "$here/randcheck \"$m\""
+
+tmux attach-session -t randcheck
