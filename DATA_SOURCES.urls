@@ -1,0 +1,10 @@
+Symlink your local copy with the data sources into the git directory
+
+DATA_SOURCES
+
+the tests will pick up the files automatically.
+
+URLS:
+
+http://dumps.wikimedia.org/other/static_html_dumps/current/en/wikipedia-en-html.tar.7z
+size: 15.7 GB
