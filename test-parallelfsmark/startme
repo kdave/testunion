@@ -1,0 +1,20 @@
+#!/bin/sh
+
+dir=${1:-`pwd`}
+
+for i in `seq 16`; do
+	mkdir -p $dir/scratch/$i
+done
+
+fs_mark  -D  5000  -S0  -n  100000 -s  0  -L  200 \
+	 -d $dir/scratch/0  -d $dir/scratch/1 \
+	 -d $dir/scratch/2  -d $dir/scratch/3 \
+	 -d $dir/scratch/4  -d $dir/scratch/5 \
+	 -d $dir/scratch/6  -d $dir/scratch/7 \
+	 -d $dir/scratch/8  -d $dir/scratch/9 \
+	 -d $dir/scratch/10  -d $dir/scratch/11 \
+	 -d $dir/scratch/12  -d $dir/scratch/13 \
+	 -d $dir/scratch/14  -d $dir/scratch/15 \
+	 -d $dir/scratch/15  -d $dir/scratch/16 \
+
+
