@@ -1,0 +1,38 @@
+#!/bin/sh
+
+# test template for up to 2 monitors and up to 4 parallel commands
+# usage: $0 [work_dir]
+#
+# run the test in work_dir or in current directory
+
+
+# TODO: source library
+
+if [ "$1" = '' ]; then
+	echo mount point please
+	exit
+fi
+
+m=${1:-.}
+here=$(dirname `readlink -f $0`)
+cd "$m"
+
+unset TMUX
+
+# config
+NAME=testsview
+MON1=
+MON2=
+CMD1=
+CMD2=
+CMD3=
+CMD4=
+
+tmux new-session -d -s "$NAME"
+tmux new-window -t "$NAME":0 -k "${MON2:-vmstat 1}"
+tmux split-window -t "$NAME":0 -p 66 -v "${CMD1:-bash}"
+tmux split-window -d -t "$NAME":0.0 -p 33 -h "${MON1:-bash}"
+tmux split-window -t "$NAME":0 -h "${CMD2:-bash}"
+tmux split-window -t "$NAME":0.1 -v "${CMD3:-bash}"
+tmux split-window -t "$NAME":0.2 -v "${CMD4:-bash}"
+tmux attach-session -t "$NAME"
