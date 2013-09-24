@@ -1,0 +1,32 @@
+#!/bin/sh
+# usage: $0 testdir
+# create a 4g of random data, verify md5sum after caches dropped
+
+m=4
+
+if ! [ -z "$1" ]; then m=$1;fi
+
+bs=1M
+count=$(($m*1024))
+f=randcheck$$
+
+function randomdata() {
+if type -p openssl >& /dev/null; then
+	echo >&2 "Using openssl to generate random data"
+	openssl enc -aes-256-cbc -pass pass:"$(dd if=/dev/urandom bs=128 count=1 2>/dev/null | base64)" -nosalt  < /dev/zero
+else
+	echo >&2 "Using /dev/urandom to generate random data"
+	cat /dev/urandom
+fi
+}
+
+
+randomdata | dd iflag=fullblock bs=$bs count=$count of=$f
+md5sum $f > .md5sum$$
+sync
+sleep 1
+sync
+sleep 1
+echo 3 > /proc/sys/vm/drop_caches
+md5sum -c .md5sum$$ && { rm -f $f; exit 0; }
+exit 1
