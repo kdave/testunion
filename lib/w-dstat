@@ -1,0 +1,8 @@
+#!/bin/sh
+
+if type -p dstat >& /dev/null; then
+	dstat -f
+else
+	echo "dstat is not installed (press key to finish)"
+	read -n 1
+fi
