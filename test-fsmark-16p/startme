@@ -1,0 +1,38 @@
+#!/bin/sh
+
+# run 16 parallel fs_mark threads and create empty files
+# usage: $0 [--subvols]
+#
+# --subvols   create subvolumes instead of directories, this improves
+#             performance due to lower locking stress on the single subvolume
+
+subvols=false
+
+if [ "$1" == '--subvols' ]; then
+	echo "Use subvols for 1st level directories"
+	subvols=true
+	shift
+fi
+
+dir=${1:-`pwd`}
+
+for i in `seq 0 15`; do
+	if $subvols; then
+		mkdir -p $dir/scratch/
+		sudo btrfs subvol create $dir/scratch/$i
+	else
+		mkdir -p $dir/scratch/$i
+	fi
+done
+
+fs_mark  -D  5000  -S0  -n  100000 -s  0  -L  200 \
+	 -d $dir/scratch/0  -d $dir/scratch/1 \
+	 -d $dir/scratch/2  -d $dir/scratch/3 \
+	 -d $dir/scratch/4  -d $dir/scratch/5 \
+	 -d $dir/scratch/6  -d $dir/scratch/7 \
+	 -d $dir/scratch/8  -d $dir/scratch/9 \
+	 -d $dir/scratch/10  -d $dir/scratch/11 \
+	 -d $dir/scratch/12  -d $dir/scratch/13 \
+	 -d $dir/scratch/14  -d $dir/scratch/15
+
+
