@@ -1,0 +1,15 @@
+#!/bin/sh
+
+# repeatedly run the snapshot stress and increase number of copies
+# each time until the filesystem gets full
+#
+# the filesystem should stay usable afterwards, ie. deleting files, subvolumes,
+# filling with data, balance etc
+
+from=16
+to=128
+step=4
+
+for i in `seq $from $step $to`;do
+	./stress-rsyncsnap -n $i || exit 1
+done

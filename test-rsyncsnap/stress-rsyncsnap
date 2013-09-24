@@ -1,0 +1,117 @@
+#!/bin/bash
+# Script to run a multi-threaded rsync process on multiple kernel source git
+# trees
+# (author: mitch)
+
+# usage: $0 [-n copies] [-c]
+# -n   create n copies of the source
+# -c   use plain directories instead of subvolumes per-copy
+
+# Unpack a git source to 2 directories, clone 2nd copy to N subdirectories
+# run git checkout to an old commit, rsync back to 1st copy
+
+BNCHMNT="${1:-.}"
+TIMEBIN="/usr/bin/time"
+BTRFSBIN="btrfs"
+TIMESLOT=$(date '+%Y%m%d-%H%M')
+DOCP=false
+RM='rm -rf -- '
+CP='cp -a '
+MKDIR='mkdir '
+NR=8
+
+GITSRCARCHIVE="~/DATA_SOURCES/linux-3.git.tar.bz2"
+ARCHIVEDIR='linux-3.git'
+PREVTAG='v2.6.32'
+
+while getopts "n:c" opt; do
+	case $opt in
+		n) NR=$OPTARG ;;
+		c) echo "Use copy"
+		   DOCP=true ;;
+		*) echo Unknown option $opt; exit 1 ;;
+	esac
+done
+
+shift $(( OPTIND - 1 ))
+
+BNCHMNT="${1:-.}"
+
+if ! $DOCP; then
+	RM="${BTRFSBIN} subvolume delete "
+	MKDIR="${BTRFSBIN} subvolume create "
+	CP="${BTRFSBIN} subvolume snapshot "
+fi
+
+echo "TIMESLOT is ${TIMESLOT}"
+
+if [[ ! -e ${GITSRCARCHIVE} ]]; then
+	echo "Git source archive ${GITSRCARCHIVE} not found! exiting!!!"
+	exit 1
+fi
+
+if [[ ! -e ${TIMEBIN} ]]; then
+	echo "Application ${TIMEBIN} not found (is it installed?)! Exiting!!!"
+	exit 1
+fi
+
+# Delete subdirectories from previous run.
+for SUBDIR in `seq $NR`
+do
+	if [[ -e ${BNCHMNT}/subdir${SUBDIR} ]]; then
+		echo "Snapshot/copy ${BNCHMNT}/subdir${SUBDIR} found, deleting..."
+		$RM ${BNCHMNT}/subdir${SUBDIR}
+	fi
+done
+
+sync
+
+echo "Dearchiving two kernel git source dirs to ${BNCHMNT}..."
+cd ${BNCHMNT}
+
+# First, make the source directory a subvolume
+$MKDIR ./subdir1/
+time tar -xpf ${GITSRCARCHIVE} -C ./subdir1/
+sync
+$MKDIR ./subdir2/
+time tar -xpf ${GITSRCARCHIVE} -C ./subdir2/
+
+sync
+echo "Snapshoting to 3 up to $NR"
+for I in `seq 3 $NR`
+do
+	$CP ${BNCHMNT}/subdir2 ${BNCHMNT}/subdir${I} &
+done
+
+echo "Wait for snapshots"
+wait
+
+sync
+
+echo "Time to obtain git status of kernel git sources..."
+(
+cd ${BNCHMNT}/subdir1/$ARCHIVEDIR/
+time git status
+
+sync
+echo "Time to checkout $PREVTAG git sources..."
+time git checkout $PREVTAG
+)
+
+sync
+
+echo "Starting $((NR-1)) simultaneous rsync processes..."
+#cd ${BNCHMNT}/
+pwd
+for TARG in `seq 2 $NR`
+do
+	SUBDIRTARGET="subdir${TARG}"
+	LOGFILE="rsync-bench-results${TARG}.txt"
+	time rsync -rlpt -qcK --delete \
+		${BNCHMNT}/subdir1/$ARCHIVEDIR/ \
+		${BNCHMNT}/${SUBDIRTARGET}/$ARCHIVEDIR/ \
+		> $LOGFILE 2>&1 &
+done
+
+echo 'Last wait'
+wait
