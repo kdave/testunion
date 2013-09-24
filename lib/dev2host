@@ -1,0 +1,18 @@
+#!/bin/sh
+# get scsi host of a given device
+
+[ -z "$1" ] && { echo "usage: $0 device"; exit 1; }
+
+full=$(readlink -f "$1")
+
+dev="${full##*/}"
+echo $dev
+
+sys=/sys/class/block/$dev
+echo $sys
+sysabs=`readlink -f "$sys"`
+echo $sysabs
+
+host=$(echo "$sysabs"|awk -F '/' '{print $7}')
+base=$(echo "$sysabs"|awk -F '/' '{print $9}')
+echo $host
