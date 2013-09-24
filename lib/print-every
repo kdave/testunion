@@ -1,0 +1,3 @@
+#!/bin/sh
+# print every $1-th line
+awk "!(NR%$1){print}"
