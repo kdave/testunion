@@ -1,0 +1,3 @@
+#!/bin/sh
+# https://bitbucket.org/aakef/ql-fstest
+./fstest -p 95 -i --min-bits 12 --max-bits 31
