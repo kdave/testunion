@@ -2,12 +2,11 @@
 # periodically watch fi df status of given dir
 # (press a key to refresh immediatelly)
 
-# usage: $o [dir]
+# usage: $0 [dir]
 
 s=5
 while :;do
 	echo === `date`
 	btrfs filesystem df ${1:-.}
-	#sleep $s
 	read -t $s
 done
