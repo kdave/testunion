@@ -1,0 +1,18 @@
+obj-m += btrfs.o
+
+btrfs-y += acl.o async-thread.o backref.o compression.o ctree.o delayed-inode.o \
+	delayed-ref.o dir-item.o disk-io.o export.o extent-tree.o extent_io.o \
+	extent_map.o file-item.o file.o free-space-cache.o inode-item.o inode-map.o \
+	inode.o ioctl.o locking.o lzo.o ordered-data.o orphan.o print-tree.o reada.o \
+	relocation.o root-tree.o scrub.o struct-funcs.o super.o sysfs.o transaction.o \
+	tree-defrag.o tree-log.o ulist.o volumes.o xattr.o zlib.o \
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+
+install:
+	cp /lib/modules/$(shell uname -r)/kernel/fs/btrfs/btrfs.ko /lib/modules/$(shell uname -r)/kernel/fs/btrfs/btrfs.ko.$(shell date +%s)
+	cp btrfs.ko /lib/modules/$(shell uname -r)/kernel/fs/btrfs/
