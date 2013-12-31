@@ -1,0 +1,8 @@
+#!/bin/sh
+s=5
+[ -d "$1" ] && cd "$1"
+while :; do
+	snap=$(ls -d snap*|shuf|head -1)
+	btrfs subvol delete $snap
+	sleep $s
+done

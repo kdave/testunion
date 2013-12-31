@@ -1,0 +1,13 @@
+#!/bin/sh
+
+sleep=4m
+
+while :;do
+	echo wait $sleep
+	sleep $sleep
+	echo start rm
+	date
+	rm -rf -- "$1"
+	echo rm done
+	date
+done

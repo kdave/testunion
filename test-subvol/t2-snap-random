@@ -1,0 +1,8 @@
+#!/bin/sh
+s=1
+c=1
+while :; do
+	btrfs subvol snap ${1:-.} snap$RANDOM$RANDOM-$c
+	c=$((c+1))
+	sleep $s
+done
