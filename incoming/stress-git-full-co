@@ -1,0 +1,23 @@
+#!/bin/bash
+
+syncafter=100
+synci=0
+lastcommit=master
+
+if [ -f git-stress-last-commit ]; then
+	lastcommit=`cat git-stress-last-commit`
+fi
+range=$lastcommit
+
+for i in $(git rev-list --max-count=100000 $range);do
+	echo $i
+	git checkout -f $i
+	echo $i > git-stress-last-commit
+	git show|lsdiff
+	if [ $synci -gt $syncafter ]; then
+		echo "Syncing ..."
+		btrfs filesystem sync `pwd`
+		synci=0
+	fi
+	synci=$(($synci+1))
+done
