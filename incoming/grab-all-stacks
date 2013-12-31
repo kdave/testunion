@@ -1,0 +1,6 @@
+#!/bin/sh
+
+for i in `ls -d /proc/[0-9]*`;do
+	ps ${i##/proc/}
+	sudo cat $i/stack 2>/dev/null
+done

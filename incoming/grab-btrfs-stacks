@@ -1,0 +1,8 @@
+#!/bin/sh
+
+ts=`date +%Y%m%d-%H%M%S`
+
+for i in `pgrep btrfs`; do
+	ps $i
+	sudo cat /proc/$i/stack 2>/dev/null
+done

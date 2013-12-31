@@ -1,0 +1,6 @@
+#!/bin/sh
+
+for i in $(ps aux|grep " S[+ ]\?"|awk '{print $2}'); do
+	ps $i
+	sudo cat /proc/$i/stack 2>/dev/null
+done

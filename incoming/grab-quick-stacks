@@ -1,0 +1,6 @@
+#!/bin/sh
+
+for i in $(ls -d1 /proc/[0-9]*); do
+	echo === PROC $i
+	cat $i/stack 2>/dev/null
+done
