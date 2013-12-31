@@ -1,0 +1,636 @@
+#!/usr/bin/env python
+#
+# sample usage: compilebench -D some_working_dir see compilebench -h for more
+#
+# compilebench aims to age the filesystem by simulating a kernel compile
+# workload.  The dataset files are used to record the name and sizes of the
+# files in a kernel tree in 4 different states:
+#
+# clean, unpatched (v2.6.20 right after untar)
+# compiled, unpatched (v2.6.20 after compile)
+# clean, patched (v2.6.21)
+# compiled, patched (v2.6.21 after compile)
+#
+# The benchmark starts by creating a number of copies of the clean,unpatched
+# dataset (controlled by -i), and then proceeds to do random operations similar
+# to:
+#
+# Compile, make clean, create a new kernel tree, rm -rf a kernel tree, patch a
+# kernel tree, read a tree, and stat a tree
+#
+# The random seed is fixed to the same value for every run, so repeated runs
+# should give identical results.  The patching operation is somewhat special,
+# 1/3 of the time it will unlink the files before writing the new "patched"
+# version, and the rest of the time it will overwrite the existing file.
+# The patching operation also reads the file it is patching.
+#
+# By default, once all the trees are created a call to sync is done and
+# /proc/sys/vm/drop_caches is used to drop all filesystem caches.  Each random
+# iteration includes the time to run sync() and the caches are dropped when the
+# iteration is over.
+#
+# The goal is to benchmark the allocator and directory locality.  So,
+# compilebnech tries to take filesystem caches out of the picture whenever
+# possible.  This can be turned off by running with --no-sync, but the
+# results are less reliable because that cache can either slow down (when
+# writeback is in progress) or speed up (when directory contents are cached)
+# a given operation at strange times.
+#
+
+import os, sys, time, random, signal
+from optparse import OptionParser
+
+VERSION = "0.6"
+
+def maybe_sync():
+    if run_syncs:
+        os.system('sync')
+
+def pathcomp(x, y):
+    dirx = os.path.dirname(x)
+    diry = os.path.dirname(y)
+
+    if dirx in y:
+        return -1
+    if diry in x:
+        return 1
+    return cmp(x, y)
+
+# simple recursive directory rm.  Have not yet checked to see if it
+# is dramatically slower than system('rm -rf') TODO
+def rmrf(dirname):
+    dirname = os.path.join(benchdir, dirname)
+    start_time = os.times()
+    for root, dirs, files in os.walk(dirname, topdown=False):
+        for name in files:
+            os.remove(os.path.join(root, name))
+        for name in dirs:
+            os.rmdir(os.path.join(root, name))
+    maybe_sync()
+    end_time = os.times()
+    user = end_time[0] - start_time[0]
+    system = end_time[1] - start_time[1]
+    real = end_time[4] - start_time[4]
+    return (user, system, real)
+
+def random_order(dhash, rnd):
+    keys = dhash.keys()
+    rnd.shuffle(keys)
+    ret = [ (str, dhash[str]) for str in keys ]
+    return ret
+
+def native_order(dhash, tag):
+    native = []
+    dirname = 'native-0'
+    i = 0
+    fullpath = os.path.join(benchdir, dirname)
+    while os.path.exists(fullpath):
+        i += 1
+        dirname = 'native-%d' % i
+        fullpath = os.path.join(benchdir, dirname)
+
+    sorted = dhash.keys()
+    sorted.sort(cmp=pathcomp)
+    tmplist = []
+    for x in sorted:
+        tmplist.append((x, dhash[x]))
+    run_directory(tmplist, dirname, "native %s" % tag)
+    baselen = len(fullpath) + 1
+    for root, dirs, files in os.walk(fullpath, topdown=True):
+        for name in files:
+            str = os.path.join(root, name)[baselen:]
+            native.append((str, dhash[str]))
+    rmrf(dirname)
+    os.rmdir(fullpath)
+    return native
+
+# simple code to read a whole directory tree.  Seems to be about the same
+# as tar cf /dev/zero dirname
+def read_dirtree(dirname):
+    orig_dirname = dirname
+    dirname = os.path.join(benchdir, dirname)
+    totalread = 0
+    start_time = os.times()
+    for root, dirs, files in os.walk(dirname, topdown=True):
+        for name in files:
+            fp = file(os.path.join(root, name))
+            while True:
+                readbuf = fp.read(bufsize)
+                if not readbuf:
+                    break
+                totalread += len(readbuf)
+            fp.close()
+
+    # include the time to record atime updates
+    maybe_sync()
+    end_time = os.times()
+    user = end_time[0] - start_time[0]
+    system = end_time[1] - start_time[1]
+    real = end_time[4] - start_time[4]
+    mbs = (float(totalread) / (1024 * 1024)) / real
+
+    sys.stderr.write("read dir %s in %.2f %.2f MB/s\n" % (orig_dirname,
+                      real, mbs))
+                     
+    return (user, system, mbs)
+
+def stat_dirtree(dirname):
+    orig_dirname = dirname
+    start_time = os.times()
+    dirname = os.path.join(benchdir, dirname)
+    for root, dirs, files in os.walk(dirname, topdown=False):
+        for name in files:
+            st = os.stat(os.path.join(root, name))
+        for name in dirs:
+            st = os.stat(os.path.join(root, name))
+
+    # include the time to record atime updates
+    maybe_sync()
+    end_time = os.times()
+    user = end_time[0] - start_time[0]
+    system = end_time[1] - start_time[1]
+    real = end_time[4] - start_time[4]
+    sys.stderr.write("stat dir %s in %.2f seconds\n" % (orig_dirname, real))
+    return (user, system, real)
+
+# parse a dataset file.  format: filename size
+def read_dataset(dirname, filename):
+    fp = file(os.path.join(dirname, filename))
+    lines = {}
+    for x in fp:
+        words = x.split()
+        lines[words[0]] = words[1]
+    fp.close()
+    return lines
+
+# given a dataset hash of the .o files in a compiled dataset, remove them all
+# from dirname.
+#
+def clean_directory(dataset, dirname):
+
+    total_bytes = 0.0
+    start_time = os.times()
+
+    curdir = os.path.join(benchdir, dirname)
+
+    for x,sz in dataset:
+        name = os.path.join(curdir, x)
+        sz = int(sz)
+        total_bytes += sz
+        os.unlink(name)
+
+    maybe_sync()
+    end_time = os.times()
+    user = end_time[0] - start_time[0]
+    system = end_time[1] - start_time[1]
+    real = end_time[4] - start_time[4]
+    total_bytes = total_bytes / (1024 * 1024)
+    mbs = total_bytes / real
+    sys.stderr.write("clean %s %dMB in %.2f seconds (%.2f MB/s)\n" % (dirname,
+                      total_bytes, real, mbs))
+    return (user, system, mbs)
+                         
+# given a dataset, create all the files it describes in 'dirname'.
+# operation is used for printing to stderr.  If unlink is true, files are
+# unlinked before they are written.  If readfirst is true, files are read
+# before they are written.
+#
+def run_directory(dataset, dirname, operation, unlink=False, readfirst=False):
+
+    total_bytes = 0.0
+    start_time = os.times()
+
+    curdir = os.path.join(benchdir, dirname)
+
+    try:
+        os.mkdir(curdir)
+    except: pass
+
+    seendirs = {}
+    for x,sz in dataset:
+        dname = os.path.dirname(x)
+        if dname and dname not in seendirs:
+            try:
+                os.makedirs(os.path.join(curdir, dname))
+            except:
+                pass
+            while dname:
+                seendirs[dname] = 1
+                dname = os.path.dirname(dname)
+
+        fname = os.path.join(curdir, x)
+        if unlink:
+            try: os.unlink(fname)
+            except: pass
+        fp = file(fname, 'a+')
+        if readfirst:
+            totalread = 0
+            while True:
+                readbuf = fp.read(bufsize)
+                totalread += len(readbuf)
+                if not readbuf:
+                    break;
+            fp.truncate(0)
+        fp.seek(0)
+        sz = int(sz)
+        total_bytes += sz
+        written = 0
+        while sz > 0:
+            cur = min(sz, bufsize)
+            if cur != bufsize:
+                fp.write(buf[:cur])
+            else:
+                fp.write(buf)
+            sz -= cur
+        fp.close()
+
+    maybe_sync()
+    end_time = os.times()
+    user = end_time[0] - start_time[0]
+    system = end_time[1] - start_time[1]
+    real = end_time[4] - start_time[4]
+    total_bytes = total_bytes / (1024 * 1024)
+    mbs = total_bytes / real
+    sys.stderr.write("%s %s %dMB in %.2f seconds (%.2f MB/s)\n" % (operation,
+                     dirname, total_bytes, real, mbs))
+    return (user, system, mbs)
+                         
+# big container of datasets, statistics and hashes that record which
+# directories are currently in a given state.
+#
+class dataset:
+    def __init__(self, dirname, rnd):
+        # the datasets describe the file names and sizes of the files in
+        # each state.
+        self.unpatched = read_dataset(dirname, 'dataset-unpatched')
+        self.patched = read_dataset(dirname, 'dataset-patched')
+        self.unpatched_compiled = read_dataset(dirname,
+                                               'dataset-unpatched-compiled')
+        self.compiled = read_dataset(dirname, 'dataset-patched-compiled')
+
+        # the directory hashes indicate which state each of the top level
+        # directories we've created is in.
+        self.patched_dirs = {}
+        self.unpatched_dirs = {}
+        self.unpatched_compiled_dirs = {}
+        self.patched_compiled_dirs = {}
+
+        # simple counters for averaging mb/s of each run.  Delete is somewhat
+        # special, it just records how long the rm -rf took instead of
+        # the mb/s.
+        # that stats are in the form:
+        # user time, system time, mbs, num
+        self.initial_create_stats = [0.0, 0.0, 0.0, 0]
+        self.create_stats = [0.0, 0.0, 0.0, 0]
+        self.patch_stats = [0.0, 0.0, 0.0, 0]
+        self.compile_stats = [0.0, 0.0, 0.0, 0]
+        self.clean_stats = [0.0, 0.0, 0.0, 0]
+        self.delete_stats = [0.0, 0.0, 0.0, 0]
+        self.delete_compiled_stats = [0.0, 0.0, 0.0, 0]
+        self.read_stats = [0.0, 0.0, 0.0, 0]
+        self.read_compiled_stats = [0.0, 0.0, 0.0, 0]
+        self.stat_stats = [0.0, 0.0, 0.0, 0]
+        self.stat_compiled_stats = [0.0, 0.0, 0.0, 0]
+
+        # the compiled datasets should only include files unique to the
+        # compiled state.  Strip out any files in common with uncompiled
+        # datasets.
+        for x in self.unpatched:
+            try:
+                del self.unpatched_compiled[x]
+            except: pass
+
+        for x in self.patched:
+            try:
+                del self.compiled[x]
+            except: pass
+
+        # the patched datasets should only include files with different
+        # sizes compared to their unpatched state.  Strip out any dups
+        for x in self.unpatched:
+            if x in self.patched and self.patched[x] == self.unpatched[x]:
+                del self.patched[x]
+
+        for x in self.unpatched_compiled:
+            if (x in self.compiled and
+                self.compiled[x] == self.unpatched_compiled[x]):
+                del self.compiled[x]
+
+        self.unpatched = native_order(self.unpatched, "unpatched")
+        self.patched = native_order(self.patched, "patched")
+        self.unpatched_compiled = random_order(self.unpatched_compiled, rnd)
+        self.compiled = native_order(self.compiled, "patched compiled")
+
+def add_times(stats, times):
+    stats[0] += times[0]
+    stats[1] += times[1]
+    stats[2] += times[2]
+    stats[3] += 1
+
+# randomly pick a directory that is unpatched and patch it
+# return 0 if no unpatched dirs were found
+def patch_one_dir(dset, rnd):
+    op = ((dset.patched, dset.unpatched_dirs, dset.patched_dirs),
+                     (dset.compiled, dset.unpatched_compiled_dirs,
+                     dset.patched_compiled_dirs))
+    good = [ x for x in op if len(x[1]) > 0 ]
+    if len(good) == 0:
+        return 0
+    ch = good[rnd.choice(xrange(0, len(good)))]
+    dir = rnd.choice(ch[1].keys())
+    if not dir:
+        return 0
+    if rnd.randint(0, 3) == 1:
+        unlink = True
+    else:
+        unlink = False
+    mbs = run_directory(ch[0], dir, "patch dir", unlink=unlink, readfirst=True)
+    del ch[1][dir]
+    ch[2][dir] = 1
+    add_times(dset.patch_stats, mbs)
+    return 1
+
+# randomly pick and compile a directory.  return zero if no clean dirs
+# were found and one otherwise
+def compile_one_dir(dset, rnd):
+    op = ((dset.unpatched_compiled, dset.unpatched_dirs,
+           dset.unpatched_compiled_dirs), (dset.compiled, dset.patched_dirs,
+           dset.patched_compiled_dirs))
+
+    good = [ x for x in op if len(x[1]) > 0 ]
+    if len(good) == 0:
+        return 0
+    ch = good[rnd.choice(xrange(0, len(good)))]
+
+    dir = rnd.choice(ch[1].keys())
+    if not dir:
+        return 0
+    mbs = run_directory(ch[0], dir, "compile dir")
+    del ch[1][dir]
+    ch[2][dir] = 1
+    add_times(dset.compile_stats, mbs)
+    return 1
+
+# randomly pick and clean a compiled directory.  return 0 if none
+# were found, one otherwise
+#
+def clean_one_dir(dset, rnd):
+    op = ((dset.compiled, dset.patched_compiled_dirs, dset.patched_dirs),
+          (dset.unpatched_compiled, dset.unpatched_compiled_dirs,
+           dset.unpatched_dirs))
+    good = [ x for x in op if len(x[1]) > 0 ]
+    if len(good) == 0:
+        return 0
+    ch = good[rnd.choice(xrange(0, len(good)))]
+    if len(ch[1]) == 0:
+        return 0
+    dir = rnd.choice(ch[1].keys())
+    if not dir:
+        return 0
+    mbs = clean_directory(ch[0], dir)
+    del ch[1][dir]
+    ch[2][dir] = 1
+    add_times(dset.clean_stats, mbs)
+    return 1
+
+# randomly delete one directory tree
+def delete_one_dir(dset, rnd):
+    op = (dset.patched_dirs, dset.unpatched_dirs, dset.unpatched_compiled_dirs,
+          dset.patched_compiled_dirs)
+    good = [ x for x in op if len(x) > 0 ]
+    if len(good) == 0:
+        return 0
+    ch = good[rnd.choice(xrange(0, len(good)))]
+    dir = rnd.choice(ch.keys())
+    seconds = rmrf(dir)
+    del ch[dir]
+    sys.stderr.write("delete %s in %.2f seconds\n" % (dir, seconds[2]));
+    if ch == dset.unpatched_compiled_dirs or ch == dset.patched_compiled_dirs:
+        add_times(dset.delete_compiled_stats, seconds)
+    else:
+        add_times(dset.delete_stats, seconds)
+    return 1
+
+# randomly read a whole dirctory
+def read_one_dir(dset, rnd):
+    op = (dset.patched_dirs, dset.unpatched_dirs, dset.unpatched_compiled_dirs,
+          dset.patched_compiled_dirs)
+    good = [ x for x in op if len(x) > 0 ]
+    if len(good) == 0:
+        return 0
+    ch = good[rnd.choice(xrange(0, len(good)))]
+    dir = rnd.choice(ch.keys())
+    mbs = read_dirtree(dir)
+    if ch == dset.unpatched_compiled_dirs or ch == dset.patched_compiled_dirs:
+        add_times(dset.read_compiled_stats, mbs)
+    else:
+        add_times(dset.read_stats, mbs)
+    return 1
+
+# pick one directory at random and stat it.
+def stat_one_dir(dset, rnd):
+    op = (dset.patched_dirs, dset.unpatched_dirs, dset.unpatched_compiled_dirs,
+          dset.patched_compiled_dirs)
+    good = [ x for x in op if len(x) > 0 ]
+    if len(good) == 0:
+        return 0
+    ch = good[rnd.choice(xrange(0, len(good)))]
+    dir = rnd.choice(ch.keys())
+    seconds = stat_dirtree(dir)
+    if ch == dset.unpatched_compiled_dirs or ch == dset.patched_compiled_dirs:
+        add_times(dset.stat_compiled_stats, seconds)
+    else:
+        add_times(dset.stat_stats, seconds)
+    return 1
+
+# create a directory with a random name
+def create_one_dir(dset, rnd):
+    dirname = 'kernel-%d' % rnd.randint(100, 100000)
+    while(os.path.exists(os.path.join(benchdir, dirname))):
+        dirname = 'kernel-%d' % rnd.randint(100, 100000)
+    mbs = run_directory(dset.unpatched, dirname, "create dir")
+    dset.unpatched_dirs[dirname] = 1
+    add_times(dset.create_stats, mbs)
+    return 1
+
+def print_stat(stat, tag, desc):
+    runs = stat[-1]
+    if (runs == 0):
+        print "no runs for %s" % tag
+    else:
+        user = stat[0] / runs
+        system = stat[1] / runs
+        avg = stat[2] / runs
+        print "%s total runs %d avg %.2f %s (user %.2fs sys %.2fs)" % (tag,
+               runs, avg, desc, user, system)
+
+# print average stats for all the phases.
+def print_all_stats(dset):
+    print "\nrun complete:"
+    print "=" * 74
+    print_stat(dset.initial_create_stats, "intial create", "MB/s")
+    print_stat(dset.create_stats, "create", "MB/s")
+    print_stat(dset.patch_stats, "patch", "MB/s")
+    print_stat(dset.compile_stats, "compile", "MB/s")
+    print_stat(dset.clean_stats, "clean", "MB/s")
+    print_stat(dset.read_stats, "read tree", "MB/s")
+    print_stat(dset.read_compiled_stats, "read compiled tree", "MB/s")
+    print_stat(dset.delete_stats, "delete tree", "seconds")
+    print_stat(dset.delete_compiled_stats, "delete compiled tree", "seconds")
+    print_stat(dset.stat_stats, "stat tree", "seconds")
+    print_stat(dset.stat_compiled_stats, "stat compiled tree", "seconds")
+
+def drop_caches():
+    global drop_caches_err
+
+    if not drop_caches_err and not options.no_sync:
+        try:
+            fp = file('/proc/sys/vm/drop_caches', 'w')
+            fp.write('3')
+            fp.close()
+        except:
+            sys.stderr.write("error on drop caches, will skip it from now on\n")
+            drop_caches_err = True
+
+def start_blktrace(trace, str, device):
+    if not trace:
+        return 0
+    trace = "%s-%s-%s" % (trace, str, total_runs)
+    return os.spawnlp(os.P_NOWAIT, "blktrace", "-d", device, "-o", trace)
+
+def stop_blktrace(pid):
+    if pid == 0:
+        return
+    os.kill(pid, signal.SIGTERM)
+    pid, err = os.wait()
+    if err:
+        sys.stderr.write("exit due to blktrace failure %d\n" % err)
+        exit(1)
+
+# function generator for the signal handler
+def handler_func(dset):
+    def handler(signum, frame):
+        sys.stderr.write("caught signal %d\n" % signum)
+        print_all_stats(dset)
+        sys.exit(1)
+    return handler
+
+# tuple of function pointers to choose at random.
+ops = (patch_one_dir, compile_one_dir, clean_one_dir,
+       delete_one_dir, create_one_dir, read_one_dir, stat_one_dir)
+
+# main
+usage = "usage: %prog [options]\n" + "version: %s" % VERSION
+parser = OptionParser(usage=usage)
+parser.add_option("-b", "--buffer-size", help="buffer size (bytes)",
+                  type="int", default=262144)
+parser.add_option("-i", "--initial-dirs",
+                  help="number of dirs initially created", type="int",
+                  default=30)
+parser.add_option("-r", "--runs", help="number of rand op runs", type="int",
+                  default=100)
+parser.add_option("-D", "--directory", help="working directory",
+                  default="/mnt/default")
+parser.add_option("-s", "--sources", help="data set source file directory",
+                  default=".")
+parser.add_option("-t", "--trace", help="blktrace output file",
+                  default=None)
+parser.add_option("-d", "--device", help="blktrace device",
+                  default=None)
+parser.add_option("-m", "--makej", default=False, action="store_true",
+                  help="simulate a make -j on the initial dirs and exit")
+parser.add_option("-n", "--no-sync",
+                   help="don't sync and drop caches between each iteration",
+                   default=False, action="store_true")
+
+(options, args) = parser.parse_args()
+
+if options.trace and not options.device:
+        sys.stderr.write("No blktrace device specified\n")
+        sys.exit(1)
+
+bufsize = options.buffer_size
+benchdir = options.directory
+run_syncs = False
+
+# set the seed so we get repeatable results.
+rnd = random.Random(555)
+
+# randomize buffer due to compression
+allchars=''.join([chr(x) for x in range(256)])
+buf = ''.join([random.choice(allchars) for x in range(bufsize)])
+
+if not os.path.exists(benchdir):
+    sys.stderr.write("creating %s\n" % benchdir)
+    os.makedirs(benchdir)
+
+sys.stderr.write("using working directory %s, %d intial dirs %d runs\n" %
+                 (benchdir, options.initial_dirs, options.runs))
+
+dset = dataset(options.sources, rnd)
+signal.signal(signal.SIGTERM, handler_func(dset))
+signal.signal(signal.SIGINT, handler_func(dset))
+total_runs = 0
+drop_caches_err = 0
+
+pid = start_blktrace(options.trace, "create-dirs", options.device)
+for x in xrange(0, options.initial_dirs):
+    dirname = "kernel-%d" % x
+    mbs = run_directory(dset.unpatched, dirname, "create dir")
+    dset.unpatched_dirs[dirname] = 1
+    dset.initial_create_stats[0] += mbs[0]
+    dset.initial_create_stats[1] += mbs[1]
+    dset.initial_create_stats[2] += mbs[2]
+    dset.initial_create_stats[3] += 1
+
+if not options.no_sync:
+    run_syncs = True
+    maybe_sync()
+
+stop_blktrace(pid)
+
+if options.makej:
+    want_sync = run_syncs
+    run_syncs = False
+    pid = start_blktrace(options.trace, "compile-dirs", options.device)
+    while True:
+        if not compile_one_dir(dset, rnd):
+            break
+        total_runs += 1
+
+    run_syncs = want_sync
+    maybe_sync()
+    stop_blktrace(pid)
+    drop_caches()
+    run_syncs = False
+
+    pid = start_blktrace(options.trace, "read-dirs", options.device)
+    for x in xrange(3):
+        read_one_dir(dset, rnd)
+        total_runs += 1
+    stop_blktrace(pid)
+
+    run_syncs = want_sync
+    maybe_sync()
+    drop_caches()
+
+    pid = start_blktrace(options.trace, "rm-dirs", options.device)
+    run_syncs = False
+    while True:
+        if not delete_one_dir(dset, rnd):
+            break
+        total_runs += 1
+
+    run_syncs = want_sync
+    maybe_sync()
+    stop_blktrace(pid)
+
+    print_all_stats(dset)
+    sys.exit(0)
+
+while total_runs < options.runs:
+    drop_caches()
+    func = rnd.choice(ops)
+    total_runs += func(dset, rnd)
+
+print_all_stats(dset)

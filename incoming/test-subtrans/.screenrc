@@ -1,0 +1,7 @@
+startup_message off
+autodetach on
+hardstatus alwayslastline
+hardstatus string '%{= kG}[ %{G}%H %{g}][%= %{=kw}%?%-Lw%?%{r}(%{W}%n*%f%t%?(%u)%?%{r})%{w}%?%+Lw%?%?%= %{g}][%{B}%Y-%m-%d %{W}%c %{g}]'
+screen -t compilebench	0 ./logtest1.sh
+screen -t synctest	1 ./logtest2.sh
+screen -t snap		2 ./logtest3.sh
