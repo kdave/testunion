@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # run 16 parallel fs_mark threads and create empty files
-# usage: $0 [--subvols]
+# usage: $0 [--subvols] [dir]
 #
 # --subvols   create subvolumes instead of directories, this improves
 #             performance due to lower locking stress on the single subvolume
