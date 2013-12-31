@@ -1,0 +1,10 @@
+#!/bin/sh -x
+
+while true; do
+        echo 3 > /proc/sys/vm/drop_caches
+        find / -xdev -type f -exec md5sum '{}' +
+        find / -xdev -type f -exec btrfs fi defrag -clzo '{}' \;
+        btrfs fi balance start /
+        btrfs scrub start -Bd /
+done
+
