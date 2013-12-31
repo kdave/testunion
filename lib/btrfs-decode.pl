@@ -45,8 +45,20 @@ while (($_=<>) ne '') {
 		my $off=$2;
 		my $csum=$3;
 		my $priv=$4;
-		output(sprintf("CSUM: ino=%d offset=%d(0x%x) csum=%d(0x%x) priv=0x%x xorbits=%d",
-			$1, $2, $2, $3, $3, int($2) ^ int($3), popcount(int($2) ^ int($3))));
+		output(sprintf("CSUM: ino=%d offset=%d(0x%x) csum=%d(0x%x) priv=0x%x xorbits=%d popcnt=%d",
+			$ino, $off, $off, $csum, $csum, $priv, int($csum) ^ int($priv),
+			popcount(int($csum) ^ int($priv))));
+	}
+	# btrfs csum failed ino 687504 extent 99728945152 csum 1248216615 wanted 2035797115 mirror -1703457408
+	if(/csum failed ino (\d+) extent (\d+) csum (\d+) wanted (\d+) mirror (-?\d+)/) {
+		my $ino=$1;
+		my $ext=$2;
+		my $csum=$3;
+		my $want=$4;
+		my $mirror=$5;
+		output(sprintf("CSUM: ino=%d extent=%d(0x%x) csum=%d(0x%x) want=%d(0x%x) xorbits=%d popcnt=%d mirror=%d(0x%x)",
+			$ino, $ext, $ext, $csum, $csum, $want, $want, int($csum) ^ int($want),
+			popcount(int($2) ^ int($3)), $mirror, $mirror));
 	}
 	# relocating block group 1234 flags 45
 	if(/relocating block group (\d+) flags (\d+)/) {
