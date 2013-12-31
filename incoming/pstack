@@ -1,0 +1,18 @@
+#!/bin/sh
+sudo=sudo
+[ $UID = 0 ] && sudo=
+
+for i in "$@"; do
+	if [[ "$i" =~ ^[0-9]+$ ]]; then
+		cat /proc/"$i"/status | egrep 'Name:|State:|^Pid:' | tr '\n' '\t'
+		echo
+		$sudo cat /proc/"$i"/stack
+	else
+		for j in $(pgrep $i); do
+			cat /proc/"$j"/status | egrep 'Name:|State:|^Pid:' | tr '\n' '\t'
+			echo
+			$sudo cat /proc/"$j"/stack
+		done
+	fi
+done
+# vi:sw=2:ts=2

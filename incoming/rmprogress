@@ -1,0 +1,18 @@
+#!/bin/sh
+
+if [ -z "$1" ]; then
+	echo "no file"
+	exit 1
+fi
+file="$1"
+
+size=`stat --format='%s' "$file"`
+step=$((128*1023*1024))
+next=$(($size - $step))
+
+while [ $next -gt 0 ]; do
+	echo "trunc to $next"
+	truncate -s$next -- "$file"
+	next=$(($next - $step))
+done
+rm -- "$file"

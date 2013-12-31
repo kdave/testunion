@@ -1,0 +1,9 @@
+#!/bin/sh
+
+jobs=4
+depth=3
+
+echo DEPTH $depth
+echo JOBS $jobs
+
+find ${1:-.} -mindepth $depth -maxdepth $depth -type d -print0 | parallel --jobs=$jobs --null rm -rf --

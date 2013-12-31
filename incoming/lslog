@@ -1,0 +1,6 @@
+#!/bin/sh
+
+[ $UID != 0 ] && sudo=sudo
+
+hn=$(hostname -s)
+$sudo tail -n 1024 -f /var/log/messages | egrep "($hn kernel: |xfstest)" | egrep -v "(systemd[[]|systemd-)" | less
