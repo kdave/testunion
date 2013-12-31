@@ -1,0 +1,33 @@
+#!/bin/sh
+
+r=$RANDOM
+
+function doit() {
+	if test $(($r % 10)) = 3; then
+		return 0
+	fi
+	return 1
+}
+
+if [ "$1" == --force-subvolume ]; then
+	shift
+	r=3
+fi
+
+dir=$(readlink -fm -- "$1" || exit 1)
+
+if doit; then
+	if [ -d "$dir" ]; then
+		exit 0
+	fi
+	# simulate mkdir -p and create just the last component as a subvolume
+	if ! [ -d "${dir%/*}" ]; then
+		mkdir -p -- "${dir%/*}"
+	fi
+	sudo btrfs subvol create "$dir" >& /dev/null # stfu
+	#sudo btrfs subvol create "$dir"
+else
+	mkdir -p -- "$dir"
+fi
+
+true
