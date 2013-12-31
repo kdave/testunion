@@ -1,0 +1,174 @@
+#!/bin/bash -
+# -*- Shell-script -*-
+#
+# Copyright (C) 1999 Bibliotech Ltd., 631-633 Fulham Rd., London SW6 5UQ.
+#
+# $Id: stress.sh,v 1.2 1999/02/10 10:58:04 rich Exp $
+#
+# Change log:
+#
+# $Log: stress.sh,v $
+# Revision 1.2  1999/02/10 10:58:04  rich
+# Use cp instead of tar to copy.
+#
+# Revision 1.1  1999/02/09 15:13:38  rich
+# Added first version of stress test program.
+#
+
+# Stress-test a file system by doing multiple
+# parallel disk operations. This does everything
+# in MOUNTPOINT/stress.
+
+nconcurrent=50
+content=/usr/share/doc
+stagger=yes
+initzero=false
+fillzero=false
+
+while getopts "c:n:s" c; do
+    case $c in
+    c)
+	content=$OPTARG
+	;;
+    n)
+	nconcurrent=$OPTARG
+	;;
+    s)
+	stagger=no
+	;;
+    *)
+	echo 'Usage: stress-subvol-light.sh [-options] MOUNTPOINT'
+	echo 'Options: -c Content directory'
+	echo "         -n Number of concurrent accesses (default: $nconcurrent)"
+	echo '         -s Avoid staggerring start times'
+	exit 1
+	;;
+    esac
+done
+
+shift $(($OPTIND-1))
+if [ $# -ne 1 ]; then
+    echo 'For usage: stress-subvol-light.sh -?'
+    exit 1
+fi
+
+mountpoint=$1
+
+echo 'Number of concurrent processes:' $nconcurrent
+echo 'Content directory:' $content '(size:' `du -s $content | awk '{print $1}'` 'KB)'
+
+# Check the mount point is really a mount point.
+
+#if [ `df | awk '{print $6}' | grep ^$mountpoint\$ | wc -l` -lt 1 ]; then
+#    echo $mountpoint: This doesn\'t seem to be a mountpoint. Try not
+#    echo to use a trailing / character.
+#    exit 1
+#fi
+
+# Create the directory, if it doesn't exist.
+
+if $initzero; then
+
+if [ ! -d $mountpoint/stress ]; then
+    rm -rf $mountpoint/stress
+    # no need to do a subvol here
+    if ! mkdir -p $mountpoint/stress; then
+	echo Problem creating $mountpoint/stress directory. Do you have sufficient
+	echo access permissions\?
+	exit 1
+    fi
+fi
+
+echo Created $mountpoint/stress directory.
+
+fi
+
+
+# Construct MD5 sums over the content directory.
+
+if false; then
+
+echo -n "Computing MD5 sums over content directory: "
+( cd $content && find . -type f -print0 | xargs -0 md5sum | sort -o $mountpoint/stress/content.sums )
+echo done.
+
+fi
+
+# Start the stressing processes.
+if $fillzero; then
+
+echo "Create dir 0 as a snapshot source"
+sudo btrfs subvol create $mountpoint/stress/0
+cp -dRx $content $mountpoint/stress/0
+
+fi
+
+echo -n "Starting stress test processes: "
+
+pids=""
+
+p=1
+while [ $p -le $nconcurrent ]; do
+    echo -n "$p "
+
+    (
+
+	# Wait for all processes to start up.
+	if [ "$stagger" = "yes" ]; then
+	    sleep $((10*$p))
+	else
+	    sleep 10
+	fi
+
+	while true; do
+
+	    # Remove old directories.
+	    echo -n "D$p "
+	    rm -rf $mountpoint/stress/$p
+
+	    # snapy snap
+	    echo -n "S$p "
+	    #mkdir $mountpoint/stress/$p
+	    sudo btrfs subvol snap $mountpoint/stress/0 $mountpoint/stress/$p
+	    # no need to do a subvolume here now
+	    mkdir -p $mountpoint/stress/$p/$content	# pre-create, subvolumes do not mimic mkdir -p
+	    base=`basename $content`
+
+	    # Copy content -> partition.
+	    #echo -n "W$p "
+	    #( cd $content && tar cf - . ) | ( cd $mountpoint/stress/$p && tar xf - )
+	    #cp -dRx $content $mountpoint/stress/$p
+
+	    # Compare the content and the copy.
+	    #echo -n "R$p "
+	    #( cd $mountpoint/stress/$p/$base && find . -type f -print0 | xargs -0 md5sum | sort -o /tmp/stress.$$.$p )
+	    # gitty git
+	    echo -n "G$p "
+	    ( cd $mountpoint/stress/$p/$base;
+	   	 head=$(git rev-list --reverse HEAD | head -n 10000 | shuf | head -n 1)
+		 git checkout $head
+	    )
+	    diff $mountpoint/stress/content.sums /tmp/stress.$$.$p || true
+	    if [ $? != 0 ]; then
+	        echo "file miscompares in $p"
+		killall stress-subvol-light.sh
+		exit 1
+	    fi
+	    rm -f /tmp/stress.$$.$p
+	done
+    ) &
+
+    pids="$pids $!"
+
+    p=$(($p+1))
+done
+
+echo
+echo "Process IDs: $pids"
+echo "Press ^C to kill all processes"
+
+trap "kill $pids" SIGINT
+
+wait
+
+kill $pids
