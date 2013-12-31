@@ -1,0 +1,5 @@
+#!/bin/sh
+
+[ -z "$1" ] && { echo "usage: $0 device"; exit 1; }
+local dev=$(readlink -f "$1")
+readlink -f "/sys/class/block/${dev##*/}" |awk -F '/' '{print $7}'
