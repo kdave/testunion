@@ -1,0 +1,54 @@
+#!/bin/sh
+
+dev=${2:-/dev/sdb}
+
+function dev2host() {
+	[ -z "$1" ] && { echo "usage: $0 device"; exit 1; }
+	local dev=$(readlink -f "$1")
+	readlink -f "/sys/class/block/${dev##*/}" |awk -F '/' '{print $7}'
+}
+function dev2base() {
+	[ -z "$1" ] && { echo "usage: $0 device"; exit 1; }
+	local dev=$(readlink -f "$1")
+	readlink -f "/sys/class/block/${dev##*/}" |awk -F '/' '{print $11}'
+}
+
+function rescanhost() {
+	echo '- - -' > /sys/class/scsi_host/"$1"/scan
+}
+
+function killdevice() {
+	echo 1 > /sys/class/block/"$1"/device/delete
+}
+
+host=$(dev2host "$dev")
+base=$(dev2base "$dev")
+
+if [ "$1" = 'kill' ]; then
+	echo "Host to rescan: $host"
+	killdevice "$base"
+	exit 0
+fi
+
+if [ "$1" = 'scan' ]; then
+	rescanhost "$2"
+	exit 0
+fi
+
+if [ "$1" = 'info' ]; then
+	echo Device: $dev
+	echo Base: $base
+	echo Host $host
+	exit 0
+fi
+
+# unplug, wait, plug back
+if [ "$1" = 'yank' ]; then
+	echo "Host to rescan: $host"
+	killdevice "$base"
+	echo "Device down, wait, replug"
+	sleep 2
+	rescanhost "$host"
+	dmesg|tail -n 10
+	exit 0
+fi

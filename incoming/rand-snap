@@ -1,0 +1,40 @@
+#!/bin/sh
+sleep=60
+delete=0
+# delay after failed snapdel, to let others to catch up
+deletedelay=0
+pattern=snap
+
+while getopts "s:dD:p:z" c; do
+	case $c in
+	s) sleep=$OPTARG ;;
+	d) delete=1 ;;
+	D) deletedelay=$OPTARG ;;
+	p) pattern=$OPTARG ;;
+	z) touch NOMORESNAPS ;;
+	*)
+		echo "Usage: $progname [-s sleeptime] [-D afterdelete] [-d] [-p namepattern] [source]"
+		exit 1
+	;;
+	esac
+done
+shift $(( OPTIND-1 ))
+
+if [ $delete = 1 ]; then
+	while :; do
+		snap=$(ls -f1 -d "$pattern"[0-9]* | shuf | head -n 1)
+		btrfs subvolume delete "$snap"
+		ret=$?
+		sleep "$sleep"
+		if test -f NOMORESNAPS; then exit; fi
+		if [ $ret != 0 ]; then
+			sleep "$deletedelay"
+		fi
+	done
+else
+	while :; do
+		btrfs subvolume snapshot "${1:-.}" "$pattern$RANDOM"
+		sleep "$sleep"
+		if test -f NOMORESNAPS; then exit; fi
+	done
+fi

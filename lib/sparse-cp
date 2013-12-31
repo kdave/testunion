@@ -1,0 +1,33 @@
+#!/usr/bin/perl
+
+my $fn=$ARGV[0];
+open(F,"<$fn") or die $!;
+my $fsize=(stat(F))[7];
+open(OUT,">$fn.out") or die $!;
+
+my $i=0;
+my $b='';
+my $bs=4096;
+seek(F,0,0);
+seek(OUT,0,0);
+while($i<$fsize) {
+	my $bi=$i/$bs;
+	#seek(F,$i,0);
+	sysread(F,$b,$bs);
+	if(length($b) < $bs) {
+		print ("SHORT read at $i\n");
+		# full copy
+		syswrite(OUT,$b,length($b));
+	} else {
+		if($b =~ /\x00{$bs}/o) {
+			print ("ZERO run at $i ($bi)\n");
+		} else {
+			print ("DATA at $i ($bi)\n");
+			seek(OUT,$i,0);
+			syswrite(OUT,$b,length($b));
+		}
+	}
+	$i+=$bs;
+}
+close(F);
+close(OUT);
