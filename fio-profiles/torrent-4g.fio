@@ -1,0 +1,5 @@
+[torrent]
+filename=torrent-test-4g
+rw=randwrite
+size=4g
+ioengine=sync

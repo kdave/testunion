@@ -1,0 +1,5 @@
+[torrent]
+filename=torrent-test-100
+rw=randwrite
+size=100g
+ioengine=sync
