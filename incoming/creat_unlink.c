@@ -1,26 +1,28 @@
 /* gcc creat_unlink.c -o creat_unlink */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
 
 #define UNUSED          __attribute__ ((unused))
 #define PATH_SIZE       100
-#define TST_DIR		"tst_dir"
+
+char *tst_dir="tst_dir";
 
 int initialize(void)
 {
 	int ret;
 
-	ret = mkdir(TST_DIR, 0775);
+	ret = mkdir(tst_dir, 0775);
 	if (ret) {
 		perror("init fail - mkdir failed\n");
 		goto err;
 	}
 
-	ret = chdir(TST_DIR);
+	ret = chdir(tst_dir);
 	if (ret) {
 		perror("init fail - chdir failed\n");
-		rmdir(TST_DIR);
+		rmdir(tst_dir);
 	}
 err:
 	return ret;
@@ -36,7 +38,7 @@ int cleanup(void)
 		goto err;
 	}
 
-	ret = rmdir(TST_DIR);
+	ret = rmdir(tst_dir);
 	if (ret)
 		perror("cleanup fail - rmdir failed\n");
 
@@ -137,9 +139,9 @@ int main(int argc, char **argv)
 	int nfiles, n_done, ret;
 
 	/* parse the options */
-	if (argc != 2) {
+	if (argc <= 2) {
 		fprintf(stderr, "options is wrong.\n");
-		fprintf(stderr, "%s [nfiles]\n", argv[0]);
+		fprintf(stderr, "%s [nfiles] [tst_dir]\n", argv[0]);
 		exit(1);
 	}
 
@@ -147,6 +149,10 @@ int main(int argc, char **argv)
 	if (nfiles <= 0) {
 		fprintf(stderr, "option nfiles is wrong.");
 		exit(1);
+	}
+
+	if (argc >= 3) {
+		tst_dir = strdup(argv[2]);
 	}
 
 	/* initialize - create the test directory and change the current dir */
