@@ -1,0 +1,69 @@
+#!/usr/bin/perl
+# usage: $0 range..end [startid]
+
+use strict;
+use warnings;
+use Term::ANSIColor;
+
+my $make_cmd='makej -j';
+
+###################### globals
+my $dryrun=0;           # pretend
+my $fullbuild=0;        # remove all object files before make
+my $progressive=0;      # continue even if it does not compile
+
+###################### subs
+sub runcmd {
+        if($dryrun) {
+                print("DRYRUN: @_\n");
+                return 0;
+        } else {
+                return system("@_");
+        }
+}
+sub doclean {
+        my $c="make clean";
+        print("$c\n");
+        runcmd($c);
+}
+####################### locals
+my $range=$ARGV[0];
+my $from=undef;
+my $noskip=1;
+my $c='';
+####################### main
+my @revs=split("\n", `git rev-list --reverse --no-merges $range`);
+if(defined $ARGV[1]) {
+        $from=$ARGV[1];
+        $noskip=0;
+}
+if($dryrun) {
+        print("REVS:\n",join("\n", @revs,''));
+}
+doclean();
+foreach(@revs) {
+        next unless($noskip || (defined $from && /^$from/));
+
+        print colored ['yellow'], ("--- Checking out $_\n");
+        $c="git checkout $_";
+        print("$c\n");
+        runcmd($c) and die("Cannot checkout $_");
+        runcmd("git tag --force buildtest-last");
+
+        doclean() if($fullbuild);
+
+        print colored ['yellow'], ("MAKE: $make_cmd\n");
+        if($progressive) {
+                if(runcmd($make_cmd)) {
+			print colored ['magenta'], ("Build failure at $_, continuing\n");
+		}
+        } else {
+                if(runcmd($make_cmd)) {
+			print colored ['red'], ("Build failure at $_\n");
+			die;
+		}
+        }
+	print colored ['green'], ("Make ok\n");
+        $noskip=1;
+}
+runcmd("git tag -d buildtest-last");
