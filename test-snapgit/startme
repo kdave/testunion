@@ -6,22 +6,26 @@ srctag=v2.6.12
 topcommit=master
 dir=`basename $srctree`-clone
 
+skipexisting=true
+sortrevs=false
+
 btrfs='sudo btrfs'
 
 if ! [ -d $dir ]; then
 	echo cloning full tree
 	$btrfs subvol del $dir-temp
 	$btrfs subvol create $dir-temp
-	git clone $srctree $dir
+	git clone $srctree $dir-temp
 else
 	echo using existing tree
 fi
 
 mv $dir-temp $dir
 cd $dir
-git rev-list $srctag..$topcommit > ../rev-list
+git rev-list $srctag..$topcommit | { $sortrevs && sort || cat; } > ../rev-list
 
 for i in $(cat ../rev-list); do
-	git checkout -b test-$i $i
+	$skipexisting && [ -d snap-$i ] && continue
+	git checkout -f -b test-$i $i
 	$btrfs subvol snap . ../snap-$i
 done
