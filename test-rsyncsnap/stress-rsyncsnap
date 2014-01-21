@@ -20,7 +20,7 @@ CP='cp -a '
 MKDIR='mkdir '
 NR=8
 
-GITSRCARCHIVE="~/DATA_SOURCES/linux-3.git.tar.bz2"
+GITSRCARCHIVE=~/DATA_SOURCES/linux-3.git.tar.bz2
 ARCHIVEDIR='linux-3.git'
 PREVTAG='v2.6.32'
 
