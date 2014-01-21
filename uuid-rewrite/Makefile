@@ -6,6 +6,10 @@ uuid-rewrite: uuid-rewrite.c ctree.h crc32c.c crc32c.h kerncompat.h
 fix-sb-csum: fix-sb-csum.c ctree.h crc32c.c crc32c.h kerncompat.h
 	gcc -o fix-sb-csum fix-sb-csum.c crc32c.c
 
+start-test:
+	truncate -s 1G img.orig
+	mkfs.btrfs -f img.orig
+
 test: uuid-rewrite
 	cp --sparse=always img.orig img.test
 	-./btrfs-show-super img.test | grep fsid
