@@ -18,6 +18,8 @@ for i in `seq $start $loops`; do
 	sync
 	echo Test mount
 	sudo umount $mnt
-	sudo mount -t btrfs -o loop,ro img.test $mnt
+	lo=$(sudo losetup -f --show img.test)
+	sudo mount -t btrfs -o rw $lo $mnt
+	sudo losetup -d $lo
 done
 sudo umount $mnt
