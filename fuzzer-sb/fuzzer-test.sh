@@ -3,12 +3,16 @@
 loops=10
 start=${1:-1}
 mnt=mnt
+mode=sparse
+
+fs=$(stat -f --format=%T .)
+[ "$fs" = "btrfs" ] && mode=reflink
 
 mkdir -p $mnt
 
 for i in `seq $start $loops`; do
 	echo Loop $i
-	cp --sparse=always img.orig img.test
+	cp --${mode}=always img.orig img.test
 	echo Fuzz
 	./fuzzer-sb img.test $i
 	sync
