@@ -3,6 +3,8 @@
 loops=10
 mnt=mnt
 
+mkdir -p $mnt
+
 for i in `seq $loops`; do
 	echo Loop $i
 	cp --sparse=always img.orig img.test
