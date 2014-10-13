@@ -25,6 +25,9 @@ for i in `seq $start $loops`; do
 	sync
 	sudo mount -t btrfs -o rw $lo $mnt
 	ret=$?
+	sudo umount $mnt
+	echo "Fsck"
+	sudo btrfsck $lo
 	sudo losetup -d $lo
 	if [ "$i" = 0 ]; then
 		if [ "$ret" = 0 ]; then
@@ -35,4 +38,3 @@ for i in `seq $start $loops`; do
 		fi
 	fi
 done
-sudo umount $mnt
