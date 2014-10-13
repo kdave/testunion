@@ -1,7 +1,7 @@
 #!/bin/sh
 
-loops=10
-start=${1:-0}
+loops=${1:-10}
+start=${2:-0}
 mnt=mnt
 mode=sparse
 
