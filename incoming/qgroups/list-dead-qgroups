@@ -1,0 +1,32 @@
+#!/usr/bin/perl
+
+my $dir=@ARGV[0] // `pwd`;
+
+open(F,"sudo btrfs subvol list -a $dir |") or die $!;
+#open(F,"btrfs subvol list -a $dir | awk \'\{print \$2\}\' |") or die $!;
+my %id=();
+foreach(<F>) {
+        /ID (\d+)/;
+        $id{$1}=undef;
+}
+close(F);
+
+open(F,"sudo btrfs qgroup show $dir |") or die $!;
+my @qg=<F>;
+close(F);
+foreach(@qg) {
+	/^0\/(\d+)/;
+	$_=$1;
+}
+
+foreach(@qg) {
+        next if $_ == 5;
+	next if $_ !~ /^\d+$/;
+        if(exists $id{$_}) {
+		#print("QG $_ exists\n");
+        } else {
+                print "0/$_\n";
+		#print("QG $_ not exists\n");
+        }
+}
+

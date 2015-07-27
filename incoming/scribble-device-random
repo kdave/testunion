@@ -1,0 +1,25 @@
+#!/bin/sh
+
+function die() {
+	echo "ERROR: $@"
+	exit 1
+}
+
+dev=sdb1
+[ -b "/dev/$dev" ] || die "not a dev: /dev/$dev"
+
+devsize=$(grep $dev\$ < /proc/partitions | awk '{print $3}')
+blocks=$(($devsize/4096))
+
+randlimit=$blocks
+randlimit=$((30*1024*1024*1024/4096))
+killblock=$(perl -e "print int(rand($randlimit))")
+
+echo "Device:      /dev/$dev" >&2
+echo "Device size: $devsize" >&2
+echo "Blocks:      $blocks" >&2
+echo "Randlimit:   $randlimit" >&2
+echo "Ovewrite/bl: "$(($killblock*4096)) >&2
+echo "Ovewrite/of: "$killblock >&2
+
+echo dd if=/dev/urandom of=/dev/$dev bs=4k count=1 seek=$killblock

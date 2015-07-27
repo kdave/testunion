@@ -1,0 +1,17 @@
+#!/bin/sh
+
+[ $UID = 0 ] || sudo=sudo
+
+for i in "$@"; do
+	ino=$(stat --format=%i "$i")
+	[ $ino = 256 ] || continue
+	id=$($sudo btrfs inspect rootid "$i")
+	sv=$($sudo btrfs subvol list -a .|grep "ID $id ")
+	qg=$($sudo btrfs qgroup show .| grep "0/$id ")
+	qgr=$(echo "$qg" | awk '{print $2}')
+	qge=$(echo "$qg" | awk '{print $3}')
+
+	echo $sv
+	echo '  ' Referenced: $(./pretty $qgr)
+	echo '  ' Exclusive: $(./pretty $qge)
+done

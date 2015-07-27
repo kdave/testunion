@@ -1,0 +1,3 @@
+#!/bin/sh
+[ -z "$1" ] && { echo "usage: $0 dir"; exit 1; }
+./remove-group "$1" $(./list-dead-qgroups "$1")

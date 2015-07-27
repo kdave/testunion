@@ -1,0 +1,23 @@
+#!/usr/bin/perl
+# usage: $0 <dir> <qgroups...>
+
+my $dir=shift @ARGV;
+die "Dir $dir not a dir: $!" unless(-d $dir);
+
+open(F,"sudo btrfs qgroup show -p $dir |") or die $!;
+my @qg=<F>;
+close(F);
+foreach my $g (@ARGV) {
+	foreach(@qg) {
+		my @l=split;
+		next if($l[0] ne $g);
+		print("Removing $g from $l[3]\n");
+		if($l[3] ne '---') {
+			foreach my $p(split(',', $l[3])) {
+				system("sudo btrfs qgroup remove $g $p $dir");
+			}
+		}
+		print("Removing $g itself\n");
+		system("sudo btrfs qgroup destroy $g $dir");
+	}
+}
