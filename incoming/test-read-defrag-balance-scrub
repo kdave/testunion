@@ -1,9 +1,11 @@
 #!/bin/sh -x
 
+compr=${1:-lzo}
+
 while true; do
         echo 3 > /proc/sys/vm/drop_caches
         find / -xdev -type f -exec md5sum '{}' +
-        find / -xdev -type f -exec btrfs fi defrag -clzo '{}' \;
+        find / -xdev -type f -exec btrfs fi defrag -c$compr '{}' \;
         btrfs fi balance start /
         btrfs scrub start -Bd /
 done
