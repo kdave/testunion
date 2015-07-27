@@ -12,6 +12,7 @@ else:
     answer=sys.argv[1]
 
 alignment=8
+alignment=16
 slabsize=4096
 m=re.search(r'(\d+)(?:/(\d+))?', answer)
 if not m:
