@@ -1,0 +1,10 @@
+#!/bin/sh
+# sleep
+s=20
+# counter
+c=1
+while :; do
+	btrfs subvolume snapshot -i 1/1 ${1:-.} snap$RANDOM$RANDOM-$c
+	c=$((c+1))
+	sleep $s
+done

@@ -1,0 +1,19 @@
+#!/bin/sh
+# forbidden
+export x='/dev/sdb5'
+export x='/dev/sdb6 /dev/sdc5 /dev/sdb7 /dev/sdc6 /dev/sdb8 /dev/sdc7 /dev/sdb9 /dev/sdc8'
+
+devices='/dev/sdb10 /dev/sdc9 /dev/sdc10 /dev/sda5 /dev/sda6 /dev/sda7 /dev/sda8 /dev/sda9'
+
+declare -a devarray
+devarray=( $devices )
+first=${devarray[0]}
+
+echo "MKFS"
+mkfs.btrfs -f --label TEST-SUBVOL -d single -m single "${devarray[@]}"
+echo "MOUNT"
+mount "$first" mnt || { echo "cannot mount"; exit 1; }
+echo "START"
+./startme "`pwd`/mnt"
+echo "UMOUNT"
+umount mnt

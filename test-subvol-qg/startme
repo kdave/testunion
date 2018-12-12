@@ -1,0 +1,31 @@
+#!/bin/sh
+# subvolume stress while untarring a big file
+# usage: $0 [dir]
+
+# todo: mountpoint, must be subvol (fixme)
+
+if [ "$1" = '' ]; then
+	echo mount point please
+	exit
+fi
+
+m=${1:-.}
+here=$(dirname `readlink -f $0`)
+cd "$m"
+[ -f "$here/w-dstat" ] || { echo cannot find my scripts; exit; }
+
+echo "Enable quota, rescan"
+btrfs quota enable "$m"
+hereid=$(btrfs inspect-internal rootid "$m")
+btrfs qgroup create 1/1 "$m"
+btrfs qgroup assign "0/$hereid" 1/1 "$m"
+btrfs quota rescan -w "$m"
+
+tmux new-session -d -s testsubvol
+tmux new-window -t testsubvol:0 -k $here/w-dstat
+tmux split-window -t testsubvol:0 -p 66 -v "$here/t1-gen-data \"$m\""
+tmux split-window -t testsubvol:0 -h "sleep 10; $here/t2-snap-random \"$m\""
+tmux split-window -t testsubvol:0.1 -v "sleep 15; $here/t3-snap-del-random \"$m\""
+tmux split-window -t testsubvol:0.2 -v "$here/t4-rm-wait \"$m/en\""
+
+tmux attach-session -t testsubvol

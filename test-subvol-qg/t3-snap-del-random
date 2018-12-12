@@ -1,0 +1,9 @@
+#!/bin/sh
+# sleep
+s=50
+[ -d "$1" ] && cd "$1"
+while :; do
+	snap=$(ls -d snap*|shuf|head -1)
+	btrfs subvolume delete $snap
+	sleep $s
+done
