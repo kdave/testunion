@@ -1,3 +1,19 @@
 #!/bin/sh
 [ -d "$1" ] && cd "$1"
-7z x -so ~/DATA_SOURCES/wikipedia-en-html.tar.7z | tar x
+
+if [ -d $(readlink -f ~/DATA_SOURCES ) ]; then
+	if [ -f ~/DATA_SOURCES/wikipedia-en-html.tar.xz ]; then
+		echo "Extracting data from ~ xz"
+		xzcat ~/DATA_SOURCES/wikipedia-en-html.tar.xz | tar x
+	elif [ -f ~/DATA_SOURCES/wikipedia-en-html.tar.7z ]; then
+		7z x -so ~/DATA_SOURCES/wikipedia-en-html.tar.7z | tar x
+	else
+		echo "UNKNOWN source, press key"
+		read tmp
+		exit
+	fi
+else
+	echo "UNKNOWN base path to data, press key"
+	read tmp
+	exit
+fi

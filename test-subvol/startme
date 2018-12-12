@@ -3,7 +3,6 @@
 # usage: $0 [dir]
 
 # todo: mountpoint, must be subvol (fixme)
-# dependencies: 7zip
 
 if [ "$1" = '' ]; then
 	echo mount point please
