@@ -40,12 +40,14 @@ while (($_=<>) ne '') {
 
 	}
 	# btrfs csum failed ino 66465 off 2752512 csum 1107022587 private 2566472073
-	if(/csum failed ino (\d+) off (\d+) csum (\d+) private (\d+)/) {
+	# BTRFS warning (device sda3): csum failed ino 131649 off 16384 csum 2914965650 expected csum 1425742005
+	if(/csum failed ino (\d+) off (\d+) csum (\d+) private (\d+)/ ||
+	   /csum failed ino (\d+) off (\d+) csum (\d+) expected csum (\d+)/) {
 		my $ino=$1;
 		my $off=$2;
 		my $csum=$3;
 		my $priv=$4;
-		output(sprintf("CSUM: ino=%d offset=%d(0x%x) csum=%d(0x%x) priv=0x%x xorbits=%d popcnt=%d",
+		output(sprintf("CSUM: ino=%d offset=%d(0x%x) csum=%d(0x%x) priv/expected=0x%x xorbits=%d popcnt=%d",
 			$ino, $off, $off, $csum, $csum, $priv, int($csum) ^ int($priv),
 			popcount(int($csum) ^ int($priv))));
 	}
