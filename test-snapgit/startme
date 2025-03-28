@@ -8,12 +8,13 @@ dir=`basename $srctree`-clone
 
 skipexisting=true
 sortrevs=false
+sortrevs=true
 
 btrfs='sudo btrfs'
 
 if ! [ -d $dir ]; then
 	echo cloning full tree
-	$btrfs subvol del $dir-temp
+	$btrfs subvol delete $dir-temp
 	$btrfs subvol create $dir-temp
 	git clone $srctree $dir-temp
 else
